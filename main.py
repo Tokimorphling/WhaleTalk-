@@ -15,6 +15,7 @@ from aiohttp import web, WSMsgType
 
 import config
 import live2d
+import livesites
 import tts_cloud
 from bili import BiliLive, QrLogin
 from brain import Brain, CLI_PRESETS, default_qoder_exe, err_text, list_qoder_models
@@ -66,6 +67,7 @@ class App:
         self.player = Player()
         self.bili = BiliLive(self.on_event, lambda m: self.push("log", {"level": "info", "msg": m}))
         self.douyin = DouyinLive(self.on_event, lambda m: self.push("log", {"level": "info", "msg": m}))
+        self.site = livesites.SiteLive(self.on_event, lambda m: self.push("log", {"level": "info", "msg": m}))
         self.pipe = Pipeline(self)
         self.songs = SongManager(self)
         self.games = GameManager(self)
@@ -99,12 +101,17 @@ class App:
     # ---------- 平台 ----------
     @property
     def platform(self):
-        return "douyin" if str(self.cfg.get("platform") or "").lower() == "douyin" else "bilibili"
+        p = str(self.cfg.get("platform") or "").lower()
+        return p if p in ("douyin",) + tuple(livesites.SITES) else "bilibili"
 
     @property
     def live(self):
-        """当前正在用的弹幕源（B站 / 抖音）。"""
-        return self.douyin if self.platform == "douyin" else self.bili
+        """当前正在用的弹幕源（B站 / 抖音 / 虎牙 / 斗鱼 / 快手）。"""
+        if self.platform == "douyin":
+            return self.douyin
+        if self.platform in livesites.SITES:
+            return self.site
+        return self.bili
 
     @property
     def owner_uid(self):
@@ -195,11 +202,15 @@ class App:
                 else:
                     where = "未连接"
                 who = live.login_name or ("未登录" if live.connected else "未连接")
+            elif self.platform in livesites.SITES:
+                nm = livesites.SITES[self.platform]["name"]
+                where = ("已连接 " + str(live.room_id)) if live.connected else f"{nm} 未连接"
+                who = "网页抓取" if live.connected else "未连接"
             else:
                 where = ("已连接 " + str(live.room_id)) if live.connected else ("连接中…" if live.client else "未连接")
                 who = live.login_name or "未登录"
             self.status = {
-                "platform": "douyin" if douyin else "bilibili",
+                "platform": self.platform,
                 "live": where,
                 "account": who,
                 "bili": where,
@@ -273,6 +284,8 @@ class App:
             dy = self.cfg.get("douyin") or {}
             return bool((dy.get("web_rid") or "").strip() or (dy.get("room_url") or "").strip()
                         or (dy.get("mode") or "browser") == "relay")
+        if self.platform in livesites.SITES:
+            return bool(((self.cfg.get("livesite") or {}).get("room") or "").strip())
         return bool(self.cfg.get("room_id"))
 
     async def connect(self):
@@ -284,6 +297,16 @@ class App:
             except Exception as e:
                 self.push("log", {"level": "error", "msg": f"连接抖音直播间失败：{e}"})
             return
+        if self.platform in livesites.SITES:
+            name = livesites.SITES[self.platform]["name"]
+            self.push("log", {"level": "info", "msg": f"正在连接{name}直播间 …"})
+            try:
+                site_cfg = dict(self.cfg.get("livesite") or {})
+                site_cfg["platform"] = self.platform
+                await self.site.start(site_cfg)
+            except Exception as e:
+                self.push("log", {"level": "error", "msg": f"连接{name}直播间失败：{e}"})
+            return
         self.push("log", {"level": "info", "msg": f"正在连接直播间 {self.cfg['room_id']} …"})
         try:
             await self.bili.start(self.cfg["room_id"], self.cfg.get("bili_cookie", ""))
@@ -293,12 +316,14 @@ class App:
     async def disconnect(self):
         await self.bili.stop()
         await self.douyin.stop()
+        await self.site.stop()
         self._track_live(False)
         self.push("log", {"level": "info", "msg": "已断开直播间"})
 
     async def reconnect(self):
         await self.bili.stop()
         await self.douyin.stop(keep=False)
+        await self.site.stop()
         await self.connect()
 
     async def shutdown(self):
@@ -425,6 +450,14 @@ def build_web(app: App):
             return web.Response(status=404)
         return web.FileResponse(full)
 
+    @routes.get("/api/livesite/health")
+    async def livesite_health(_):
+        s = app.site
+        return ok(connected=s.connected, room=s.room_id, owner=s.owner_name,
+                  platform=(app.cfg.get("livesite") or {}).get("platform"),
+                  info=s.browser_info, raw=list(s.raw)[:30],
+                  sites={k: {"name": v["name"], "hint": v["room_hint"]} for k, v in livesites.SITES.items()})
+
     @routes.get("/api/l2d/info")
     async def l2d_info(_):
         l2d = app.cfg["live2d"]
@@ -514,7 +547,12 @@ def build_web(app: App):
                 app.games.stop()
             app.games.push()
         if app.platform != old_platform:
-            name = "抖音直播" if app.platform == "douyin" else "B站直播"
+            if app.platform == "douyin":
+                name = "抖音直播"
+            elif app.platform in livesites.SITES:
+                name = livesites.SITES[app.platform]["name"] + "直播"
+            else:
+                name = "B站直播"
             if app.cfg.get("auto_connect") and app._has_room():
                 app.push("log", {"level": "info", "msg": f"已切换弹幕来源：{name}，正在重连…"})
                 asyncio.create_task(app.reconnect())

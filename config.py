@@ -22,6 +22,14 @@ DEFAULT_PERSONA = (
 
 DEFAULTS = {
     "platform": "bilibili",
+    "livesite": {
+        "platform": "huya",
+        "room": "",
+        "browser_exe": "",
+        "port": 9334,
+        "profile_dir": "",
+        "headless": False,
+    },
     "ui": {"native": True, "width": 1400, "height": 940},
     "session": {"auto_start": False},
     "room_id": 0,

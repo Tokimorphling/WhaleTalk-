@@ -275,8 +275,11 @@ pre.log{background:rgba(7,9,14,.78);border:1px solid var(--line);border-radius:1
     <h3>弹幕来源</h3>
     <div class="row">
       <span class="seg">
-        <label><input type="radio" name="platform" value="bilibili" data-k="platform"><span>B 站直播</span></label>
-        <label><input type="radio" name="platform" value="douyin" data-k="platform"><span>抖音直播</span></label>
+        <label><input type="radio" name="platform" value="bilibili" data-k="platform"><span>B 站</span></label>
+        <label><input type="radio" name="platform" value="douyin" data-k="platform"><span>抖音</span></label>
+        <label><input type="radio" name="platform" value="huya" data-k="platform"><span>虎牙</span></label>
+        <label><input type="radio" name="platform" value="douyu" data-k="platform"><span>斗鱼</span></label>
+        <label><input type="radio" name="platform" value="kuaishou" data-k="platform"><span>快手</span></label>
       </span>
       <label class="c" style="margin-top:2px"><input type="checkbox" data-k="auto_connect">启动软件时自动连接</label>
       <span class="btn b" data-act="connect">保存并重连</span>
@@ -347,6 +350,28 @@ pre.log{background:rgba(7,9,14,.78);border:1px solid var(--line);border-radius:1
       <span class="btn sm" id="dyClear">清空预览</span>
     </div>
     <pre class="log" id="dyRaw">（连接后这里会显示从页面读到的原始消息，看到“忽略”说明没认出来，可反馈给我加规则）</pre>
+  </div>
+
+  <div class="card" id="siteBox" style="display:none">
+    <h3><span id="siteName">虎牙</span>直播间 <span class="hint" id="siteState">未连接</span></h3>
+    <div class="row">
+      <label class="f" style="max-width:380px"><span id="siteRoomLabel">房间号</span><input data-k="livesite.room" placeholder="例如 660000"></label>
+      <span class="btn b" data-act="connect" style="margin-top:18px">保存并连接</span>
+      <span class="btn" data-act="disconnect" style="margin-top:18px">断开</span>
+    </div>
+    <p class="hint" id="siteHint"></p>
+    <p class="hint">和抖音一样走<b>浏览器抓取</b>：软件会用独立窗口打开直播间，把页面上的弹幕读出来，
+      不需要开放平台账号，也不影响你自己在用的浏览器。第一次可能需要在这个窗口里登录一次。</p>
+    <div class="row">
+      <label class="f">浏览器程序（留空自动找 Edge / Chrome）<input data-k="livesite.browser_exe" id="siteExe"></label>
+      <span class="btn" data-pick="livesite.browser_exe" data-kind="exe" style="margin-top:18px">选择…</span>
+      <label class="f" style="max-width:140px">调试端口<input type="number" data-k="livesite.port"></label>
+    </div>
+    <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">高级：浏览器数据目录</summary>
+      <div class="row" style="margin-top:8px">
+        <label class="f">留空 = 程序目录\site_profile<input data-k="livesite.profile_dir"></label>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -930,9 +955,26 @@ function fillForm() {
   if (hint) $('#cliHint').textContent = hint;
   $('#qoderExe').placeholder = CFG._qoder_default;
   // 平台：B站 / 抖音
-  const dy = CFG.platform === 'douyin';
-  $('#biliBox').style.display = dy ? 'none' : '';
+  // 平台：B站 / 抖音 / 虎牙 / 斗鱼 / 快手
+  const p = CFG.platform || 'bilibili';
+  const dy = p === 'douyin';
+  const isSite = ['huya', 'douyu', 'kuaishou'].includes(p);
+  $('#biliBox').style.display = p === 'bilibili' ? '' : 'none';
   $('#dyBox').style.display = dy ? '' : 'none';
+  if ($('#siteBox')) {
+    $('#siteBox').style.display = isSite ? '' : 'none';
+    if (isSite) {
+      const NM = {huya: '虎牙', douyu: '斗鱼', kuaishou: '快手'};
+      const HN = {
+        huya: '房间号：网址 www.huya.com/ 后面那串数字，例如 660000',
+        douyu: '房间号：网址 www.douyu.com/ 后面那串数字，例如 9999',
+        kuaishou: '快手号：网址 live.kuaishou.com/u/ 后面那串（不是纯数字），例如 3xs856itqc5ivgm'
+      };
+      $('#siteName').textContent = NM[p] || '';
+      $('#siteRoomLabel').textContent = p === 'kuaishou' ? '快手号' : '房间号';
+      $('#siteHint').textContent = HN[p] || '';
+    }
+  }
   const dyMode = (CFG.douyin || {}).mode || 'browser';
   $('#dyBrowserBox').style.display = dyMode === 'browser' ? '' : 'none';
   $('#dyRelayBox').style.display = dyMode === 'relay' ? '' : 'none';

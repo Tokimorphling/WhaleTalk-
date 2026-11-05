@@ -22,6 +22,7 @@ logs/
 qoder_workdir/
 cli_workdir/
 douyin_profile/
+site_profile/
 tts_cache/
 ui_profile/
 zcode_identity.json

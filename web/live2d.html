@@ -71,6 +71,14 @@ async function loadModel() {
   im.breath = {updateParameters: frame};
   baseW = model.width; baseH = model.height;
   app.stage.addChild(model);
+  // 诊断钩子：外部可以用 __wtL2D() 看模型到底加载成什么样（换皮套排障用）
+  window.__wtL2D = () => ({
+    ok: !!model, w: model?.width, h: model?.height,
+    textures: model?.textures?.length ?? 0,
+    params: im?.coreModel?.getParameterCount?.() ?? 0,
+    parts: im?.coreModel?.getPartCount?.() ?? 0,
+    err: errBox.textContent
+  });
   for (const id of CFG.base_expressions || []) if (await loadExpr(id)) active.push({id, w: 1, target: 1, base: true});
   layout();
 }

@@ -1,6 +1,6 @@
 # 鲸语 WhaleTalk · 工作交接文档
 
-> 面向接手的 AI / 开发者。最后更新：2026-10-31，对应版本 **v0.3.0**。
+> 面向接手的 AI / 开发者。最后更新：2026-11-06，对应版本 **v0.4.0**。
 > 建议阅读顺序：本文 → `README.md` → `CHANGELOG.md` → 需要改的模块。
 
 ---
@@ -25,13 +25,13 @@
 **鲸语 WhaleTalk**：Windows 桌面端直播助手。
 
 ```
-B站/抖音弹幕、礼物、上舰、SC
+B站 / 抖音 / 虎牙 / 斗鱼 / 快手 弹幕、礼物、上舰、SC
         ↓
    pipeline（过滤/合并/冷却/固定回复/队列）
         ↓
    brain（Qoder CLI / OpenAI 兼容 / 外部 CLI / ZCode）
         ↓
-   tts（GPT-SoVITS，本机 9880）+ 固定话术缓存
+   tts（本地 GPT-SoVITS :9880 或 在线语音 API）+ 固定话术缓存
         ↓
    播放 + Live2D 口型/表情 + OBS 浏览器源
 ```
@@ -46,14 +46,14 @@ B站/抖音弹幕、礼物、上舰、SC
 | 项 | 值 |
 |---|---|
 | GitHub | https://github.com/helplesspur/WhaleTalk- |
-| 当前 main | `9a85327`（build: 发布版 exe，v0.3.0） |
-| 提交链 | `e02e312` v0.1.0 → `a0dd41d` 源码 → `d21e49c` exe → `ad07f4e` v0.2.0 → `5e0e6fc` 源码 → `9a85327` exe |
-| Tag | `v0.1.0`、`v0.2.0`（`ad07f4e`）、`v0.3.0`（见下文 docs 提交） |
-| Release | v0.3.0（Latest）：https://github.com/helplesspur/WhaleTalk-/releases/tag/v0.3.0 |
-| 发布 exe | `release\鲸语 WhaleTalk\WhaleTalk.exe`，42,568,394 字节 |
+| 当前 main | `4d4d6b2`（build: 发布版 exe，v0.4.0） |
+| 提交链 | `e02e312` v0.1.0 → `ad07f4e` v0.2.0 → `36d1c66` v0.3.0 → `f64ea4a` 四平台 → `4d4d6b2` exe |
+| Tag | `v0.1.0`、`v0.2.0`（`ad07f4e`）、`v0.3.0`、`v0.4.0`（见下文 docs 提交） |
+| Release | v0.4.0（Latest）：https://github.com/helplesspur/WhaleTalk-/releases/tag/v0.4.0 |
+| 发布 exe | `release\鲸语 WhaleTalk\WhaleTalk.exe`，42,594,585 字节 |
 | 本地配置 | `config.json`（根目录，9.5 KB，未提交） |
 
-Release 资产：`WhaleTalk-v0.3.0-win64.zip`、`WhaleTalk.exe`、`Tutorial-CN.txt`、`SHA256SUMS.txt`。
+Release 资产：`WhaleTalk-v0.4.0-win64.zip`、`WhaleTalk.exe`、`Tutorial-CN.txt`、`SHA256SUMS.txt`。
 
 ---
 
@@ -65,9 +65,11 @@ Release 资产：`WhaleTalk-v0.3.0-win64.zip`、`WhaleTalk.exe`、`Tutorial-CN.t
 | `brain.py` | ~800 | AI 后端：`QoderSession`、`OpenAIChat`、`CLIChat`、`ZcodeProxyChat`；`Brain.ai/raw/reply`；`err_text()` |
 | `pipeline.py` | ~450 | 事件过滤、固定回复、合并/冷却、优先级队列、生成→合成→播放 worker |
 | `tts.py` | ~400 | GPT-SoVITS 引擎管理（api_v2）、合成、播放器、口型包络 |
+| `tts_cloud.py` | ~290 | 在线语音 API：六种供应商，统一 `synth(cfg,text)->(pcm,sr)` |
 | `tts_cache.py` | ~540 | 固定话术烘焙：`CACHE`、`voice_signature()`、`segments()`、`Baker` |
 | `bili.py` | ~250 | B 站 WS（blivedm 内置在 `blivedm/`）+ 扫码登录 |
 | `douyin.py` | ~650 | 抖音：DevTools 抓取（`mode=browser`）或外部转发（`mode=relay`）+ 文本解析 |
+| `livesites.py` | ~330 | 虎牙 / 斗鱼 / 快手：浏览器抓取，选择器在 `SITES` 里 |
 | `games.py` | ~1.4k | 15 个 AI 游戏、`GameManager`、计分、自动轮换、`mute_chat()` |
 | `arcade_games.py` | ~410 | 贪吃蛇 / 扫雷 / 2048 的棋盘与 AI 操作 |
 | `songs.py` / `netease.py` | ~350 / ~200 | 点歌队列、礼物门槛、无人点歌自动歌单、网易云 API |
@@ -296,25 +298,25 @@ docs/promo/refs/*            # 角色皮套/表情参考图，版权归作者（
 
 ---
 
-## 9. 最近改动（2026-10-31，v0.3.0）
+## 9. 最近改动（2026-11-06，v0.4.0）
 
-- **Live2D 通用皮套适配**：`live2d.py` 新增 `EMOTION_RULES` / `classify()` / `auto_emotions()` /
-  `motion_meta()` / `pick_model_file()`。换任何皮套都能用：模型文件三级兜底、表情按关键词归类到 12 种情绪、
-  一键重建「情绪 → 表情/动作」映射（保持原顺序和 keywords，可用表情优先保留）。
-- **动作自动收尾**：实测某皮套 8 个动作全是 `Meta.Loop=true`，播完永不停、参数一直盖住表情。
-  新增 `live2d.motion_hold`（默认 15 秒），到点 `stopAllMotions()` + 清临时表情。
-- **语音模型浏览**：`/api/tts/weights/pick`，资源管理器选 `.ckpt`/`.pth` 后自动应用，
-  目录内存相对路径、目录外记 `tts.custom_gpt` / `custom_sovits`（不复制文件）。
-- **修复**：选完皮套目录模型列表不刷新（`data-pick` 赋值不触发 change）、`model_file` 沿用旧名、
-  空目录递归扫到程序自身。
-- 代码提交 2 个 + Release v0.3.0（4 个资产）。
+- **直播间扩到五个平台**：新增 `livesites.py`（虎牙 / 斗鱼 / 快手），和抖音一样走 CDP 抓 DOM，
+  不复用各家协议。选择器在 `SITES` 字典里，只用稳定钩子（不用 CSS Modules 的 `--hash` 类名）。
+  三个平台都用公开直播间实测过。无用户名条目判为系统通知，不触发回复。
+- **在线语音**：`tts_cloud.py` 六种供应商（OpenAI 兼容 / Azure / MiniMax / ElevenLabs / Fish / 自定义），
+  `tts.provider` 切换；`Pipeline._synth()` 分流，上层无感。缓存签名加了 vendor/model/voice。
+- **语音快捷开关**：`POST /api/tts/toggle` + 控制台按钮，只切 `tts.enabled`。
+- **Cubism 5 判定**：读 `moc3` 第 5 字节，`/api/l2d/info` 返回 `moc.moc_version`。
+  实测 Core 是 5.1.0（`MocVersion_50`），加载层本就支持 v5；限制在 pixi 的 Cubism 4 渲染层。
+- **修复网易云 null 歌手**：`.get(k, "")` 兜不住 JSON `null`，`join` 抛 TypeError 让整张歌单读不出来。
+- 代码提交 3 个 + Release v0.4.0（4 个资产）。
 
 ---
 
 ## 10. 接手后的第一步
 
-1. `& $g -c safe.directory='*' status --porcelain` → 应为空；`log --oneline -3` 应为 `9a85327 / 5e0e6fc / ad07f4e`。
-2. 确认 `release\鲸语 WhaleTalk\WhaleTalk.exe` 存在（42,568,394 字节）且 `config.json` **未被修改/外传**。
+1. `& $g -c safe.directory='*' status --porcelain` → 应为空；`log --oneline -3` 应为 `4d4d6b2 / f64ea4a / 2c0feb1`。
+2. 确认 `release\鲸语 WhaleTalk\WhaleTalk.exe` 存在（42,594,585 字节）且 `config.json` **未被修改/外传**。
 3. `python main.py --no-ui` 起服务，`GET /api/config` 通 → 说明后端正常。
 4. 需要改 UI 时改 `web/index.html`，**改完必须重新打包**，exe 里是 `_MEIPASS` 的副本。
 5. 需要发布时：构建 → 复制到 `release` → 提交（源码/产物分开）→ 打 tag → 建 Release + 传资产 → 验证下载。

@@ -15,6 +15,7 @@ from aiohttp import web, WSMsgType
 
 import config
 import live2d
+import tts_cloud
 from bili import BiliLive, QrLogin
 from brain import Brain, CLI_PRESETS, default_qoder_exe, err_text, list_qoder_models
 from douyin import DouyinLive, find_browser
@@ -47,6 +48,11 @@ class UiLogHandler(logging.Handler):
         if record.name in ("ai", "tts", "bili", "douyin", "app"):
             self.app.push("log", {"level": "warn" if record.levelno < logging.ERROR else "error",
                                   "msg": record.getMessage()})
+
+
+def tts_is_cloud(cfg_tts):
+    """用了在线语音就不用起本地 GPT-SoVITS。"""
+    return (cfg_tts.get("provider") or "local") == "cloud"
 
 
 class App:
@@ -171,6 +177,8 @@ class App:
             tts = self.cfg["tts"]
             if not tts.get("enabled", True):
                 eng = "已关闭"
+            elif (tts.get("provider") or "local") == "cloud":
+                eng = "在线 · " + ((tts.get("cloud") or {}).get("vendor") or "?")
             elif self.engine.lock.locked():
                 eng = "合成中"
             else:
@@ -225,7 +233,7 @@ class App:
         self.session_active = True
         cfg = self.cfg
         started = []
-        if cfg["tts"].get("enabled") and cfg["tts"].get("auto_start"):
+        if cfg["tts"].get("enabled") and cfg["tts"].get("auto_start") and not tts_is_cloud(cfg["tts"]):
             asyncio.create_task(self.engine.start(cfg["tts"], lambda m: self.push("log", {"level": "info", "msg": m})))
             started.append("语音引擎")
         if cfg.get("auto_connect") and self._has_room():
@@ -437,7 +445,8 @@ def build_web(app: App):
         except Exception as e:
             exprs, motions, files, err = [], [], [], str(e)
         return web.json_response({"cfg": l2d, "expressions": exprs, "motions": motions, "error": err,
-                                  "model_files": files})
+                                  "model_files": files,
+                                  "moc": live2d.moc_info(l2d["model_dir"], l2d.get("model_file", ""))})
 
     @routes.post("/api/l2d/auto_map")
     async def l2d_auto_map(_):
@@ -829,8 +838,22 @@ def build_web(app: App):
 
     @routes.post("/api/tts/start")
     async def tts_start(_):
+        if tts_is_cloud(app.cfg["tts"]):
+            return ok(msg="当前用在线语音，不需要启动本地引擎")
         asyncio.create_task(app.engine.start(app.cfg["tts"], lambda m: app.push("log", {"level": "info", "msg": m})))
         return ok()
+
+    @routes.get("/api/tts/cloud/presets")
+    async def tts_cloud_presets(_):
+        return ok(presets=tts_cloud.PRESETS)
+
+    @routes.post("/api/tts/cloud/test")
+    async def tts_cloud_test(_):
+        try:
+            r = await tts_cloud.probe(app.cfg["tts"])
+        except Exception as e:
+            return web.json_response({"ok": False, "error": str(e)[:300]})
+        return ok(**r)
 
     @routes.get("/api/tts/bake")
     async def bake_status(_):
@@ -857,6 +880,14 @@ def build_web(app: App):
         n = TTS_CACHE.clear()
         app.push("log", {"level": "info", "msg": f"已清空 {n} 条固定话术缓存"})
         return ok(removed=n, **TTS_CACHE.info(app.cfg["tts"]))
+
+    @routes.post("/api/tts/toggle")
+    async def tts_toggle(_):
+        on = not bool(app.cfg["tts"].get("enabled", True))
+        app.cfg = config.merge(app.cfg, {"tts": {"enabled": on}})
+        config.save(app.cfg)
+        app.push("log", {"level": "info", "msg": "语音合成已" + ("开启" if on else "关闭（只显示文字，不出声）")})
+        return ok(enabled=on)
 
     @routes.post("/api/tts/stop")
     async def tts_stop(_):

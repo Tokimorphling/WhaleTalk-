@@ -35,6 +35,10 @@ def _sha(text):
 
 def voice_signature(cfg_tts):
     raw = "|".join(f"{k}={cfg_tts.get(k)}" for k in SIG_KEYS)
+    # 在线语音：换成另一家/另一个音色要重新烘焙；只改 API Key 不算换音色，不清缓存
+    cloud = cfg_tts.get("cloud") or {}
+    raw += f"|provider={cfg_tts.get('provider') or 'local'}|vendor={cloud.get('vendor')}" \
+           f"|model={cloud.get('model')}|voice={cloud.get('voice')}"
     return _sha(raw)[:12]
 
 

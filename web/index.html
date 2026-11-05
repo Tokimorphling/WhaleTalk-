@@ -203,6 +203,7 @@ pre.log{background:rgba(7,9,14,.78);border:1px solid var(--line);border-radius:1
       <span class="btn b" data-act="connect">连接直播间</span>
       <span class="btn" data-act="disconnect">断开</span>
       <span class="btn" id="pauseBtn">暂停自动回复</span>
+      <span class="btn" id="ttsToggle">语音：开</span>
       <span class="btn" data-ctl="skip">跳过当前语音</span>
       <span class="btn" data-ctl="clear">清空队列</span>
       <span style="flex:1"></span>
@@ -506,11 +507,52 @@ pre.log{background:rgba(7,9,14,.78);border:1px solid var(--line);border-radius:1
 <section id="voice">
   <h2>语音设置（GPT-SoVITS）</h2>
   <div class="card">
+    <h3>语音来源</h3>
+    <div class="row">
+      <label class="c"><input type="radio" name="ttsProvider" value="local" data-k="tts.provider">本地 GPT-SoVITS（免费，需要显卡）</label>
+      <label class="c"><input type="radio" name="ttsProvider" value="cloud" data-k="tts.provider">在线语音 API（不用显卡，按量计费）</label>
+    </div>
+    <p class="hint">选「在线」后本地引擎不会启动，下面的 GPT-SoVITS 设置也就不用管了。切换到在线后，固定话术缓存会因为音色签名变化自动失效，需要重新烘焙一次。</p>
     <div class="row">
       <label class="c"><input type="checkbox" data-k="tts.enabled">启用语音（关掉则只显示文字）</label>
       <label class="c"><input type="checkbox" data-k="tts.auto_start">软件启动时自动启动引擎</label>
       <label class="c"><input type="checkbox" data-k="tts.stop_on_exit">退出软件时关闭本软件启动的引擎</label>
     </div>
+  </div>
+  <div class="card" id="cloudBox">
+    <h3>在线语音</h3>
+    <div class="row">
+      <label class="f" style="max-width:200px">供应商<select id="cloudVendor">
+        <option value="openai">OpenAI 兼容接口</option>
+        <option value="azure">Azure 语音服务</option>
+        <option value="minimax">MiniMax</option>
+        <option value="elevenlabs">ElevenLabs</option>
+        <option value="fish">Fish Audio</option>
+        <option value="custom">自定义接口</option>
+      </select></label>
+      <span class="btn sm" id="cloudPreset" style="margin-top:18px">填入该供应商的默认值</span>
+      <span class="btn b sm" id="cloudTest" style="margin-top:18px">测试合成</span>
+      <span class="hint" id="cloudTestOut" style="margin-top:20px"></span>
+    </div>
+    <div class="row">
+      <label class="f">接口地址<input data-k="tts.cloud.base_url" placeholder="https://api.openai.com/v1"></label>
+    </div>
+    <div class="row">
+      <label class="f">API Key<input type="password" data-k="tts.cloud.api_key" placeholder="sk-..."></label>
+      <label class="f">模型<input data-k="tts.cloud.model" placeholder="tts-1"></label>
+      <label class="f">音色 / Voice<input data-k="tts.cloud.voice" placeholder="alloy"></label>
+    </div>
+    <div class="row">
+      <label class="f">语速 <b data-show="tts.cloud.speed"></b><input type="range" min="0.5" max="2" step="0.05" data-k="tts.cloud.speed"></label>
+      <label class="f">额外参数（JSON，可选）<input data-k="tts.cloud.extra" placeholder='{"group_id":"..."}'></label>
+    </div>
+    <div class="row" id="cloudTplRow">
+      <label class="f">请求 Body 模板（用 {text} 占位）<input data-k="tts.cloud.body_tpl" placeholder='{"text":"{text}"}'></label>
+    </div>
+    <p class="hint" id="cloudHint"></p>
+  </div>
+  <div class="card" id="localTtsBox">
+    <h3>本地引擎</h3>
     <div class="row">
       <label class="f">GPT-SoVITS 目录<input data-k="tts.gsv_dir"></label>
       <span class="btn" data-pick="tts.gsv_dir" data-kind="dir" style="margin-top:18px">浏览…</span>
@@ -739,6 +781,7 @@ pre.log{background:rgba(7,9,14,.78);border:1px solid var(--line);border-radius:1
       <label class="f">模型文件夹<input data-k="live2d.model_dir"></label>
       <span class="btn" data-pick="live2d.model_dir" data-kind="dir" style="margin-top:18px">浏览…</span>
       <label class="f" style="max-width:260px">模型文件 (.model3.json)<select data-k="live2d.model_file" id="l2dModelFile"></select></label>
+      <span class="hint" id="l2dMoc" style="margin-top:20px"></span>
     </div>
     <div class="row">
       <label class="f">大小 <b data-show="live2d.scale"></b><input type="range" min="0.3" max="3" step="0.05" data-k="live2d.scale"></label>
@@ -894,7 +937,15 @@ function fillForm() {
   $('#dyBrowserBox').style.display = dyMode === 'browser' ? '' : 'none';
   $('#dyRelayBox').style.display = dyMode === 'relay' ? '' : 'none';
   $('#dyExe').placeholder = CFG._browser_default || '留空自动查找 Edge / Chrome';
+  // 语音来源：本地 / 在线
+  const cloudOn = (CFG.tts || {}).provider === 'cloud';
+  if ($('#cloudBox')) $('#cloudBox').style.display = cloudOn ? '' : 'none';
+  if ($('#localTtsBox')) $('#localTtsBox').style.display = cloudOn ? 'none' : '';
+  if ($('#cloudVendor')) $('#cloudVendor').value = ((CFG.tts || {}).cloud || {}).vendor || 'openai';
+  if ($('#cloudTplRow')) $('#cloudTplRow').style.display = ((CFG.tts || {}).cloud || {}).vendor === 'custom' ? '' : 'none';
+  updateCloudHint();
   sessionPlanText();
+  refreshTtsBtn();
 }
 let saveTimer = null, pending = {};
 function deepMerge(a, b) { for (const k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) { a[k] = a[k] || {}; deepMerge(a[k], b[k]); } else a[k] = b[k]; } return a; }
@@ -1086,6 +1137,22 @@ $$('[data-act="connect"]').forEach(b => b.onclick = async () => { await api('/ap
 $$('[data-act="disconnect"]').forEach(b => b.onclick = () => api('/api/bili/disconnect', {}));
 $$('[data-ctl]').forEach(b => b.onclick = () => api('/api/control', {action: b.dataset.ctl}));
 $('#pauseBtn').onclick = () => api('/api/control', {action: $('#pauseBtn').dataset.paused ? 'resume' : 'pause'});
+function refreshTtsBtn() {
+  const b = $('#ttsToggle');
+  if (!b) return;
+  const on = !!getPath(CFG, 'tts.enabled');
+  b.textContent = on ? '语音：开' : '语音：关';
+  b.classList.toggle('p', on);
+}
+$('#ttsToggle').onclick = async () => {
+  const r = await api('/api/tts/toggle', {});
+  if (!r.ok) return toast('切换失败');
+  CFG.tts.enabled = r.enabled;
+  const cb = $('[data-k="tts.enabled"]');
+  if (cb) cb.checked = r.enabled;
+  refreshTtsBtn();
+  toast(r.enabled ? '语音合成已开启' : '语音合成已关闭，只显示文字');
+};
 $('#sayBtn').onclick = async () => { const t = $('#sayText').value.trim(); if (t) { await api('/api/say', {text: t}); $('#sayText').value = ''; } };
 $('#sayAiBtn').onclick = async () => {
   const t = $('#sayText').value.trim(); if (!t) return;
@@ -1133,6 +1200,41 @@ $('#engLogBtn').onclick = async () => { const el = $('#engLog'); el.style.displa
 $('#wRefresh').onclick = loadWeights; $('#devRefresh').onclick = loadDevices;
 $('#gptPick').onclick = () => pickWeight('gpt', '#gptSel');
 $('#sovitsPick').onclick = () => pickWeight('sovits', '#sovitsSel');
+let CLOUD_PRESETS = {};
+function updateCloudHint() {
+  const el = $('#cloudHint');
+  if (!el) return;
+  const v = ($('#cloudVendor') || {}).value || 'openai';
+  el.textContent = (CLOUD_PRESETS[v] || {}).hint || '';
+}
+if ($('#cloudVendor')) {
+  api('/api/tts/cloud/presets').then(r => { CLOUD_PRESETS = r.presets || {}; updateCloudHint(); });
+  $('#cloudVendor').onchange = async () => {
+    const v = $('#cloudVendor').value;
+    await saveNow({tts: {cloud: {vendor: v}}});
+    CFG.tts.cloud.vendor = v;
+    fillForm();
+  };
+  $('#cloudPreset').onclick = async () => {
+    const v = $('#cloudVendor').value;
+    const r = await api('/api/tts/cloud/presets');
+    const p = (r.presets || {})[v];
+    if (!p) return toast('没有这个供应商的预设');
+    await saveNow({tts: {cloud: {vendor: v, base_url: p.base_url, model: p.model, voice: p.voice}}});
+    Object.assign(CFG.tts.cloud, {vendor: v, base_url: p.base_url, model: p.model, voice: p.voice});
+    fillForm();
+    toast('已填入默认值，按需改 API Key 后点「测试合成」');
+  };
+  $('#cloudTest').onclick = async () => {
+    const out = $('#cloudTestOut');
+    out.style.color = '';
+    out.textContent = '合成中…';
+    const r = await api('/api/tts/cloud/test', {});
+    if (!r.ok) { out.style.color = 'var(--red)'; out.textContent = '失败：' + (r.error || '未知错误'); return; }
+    out.style.color = '#3fbf7f';
+    out.textContent = `成功：耗时 ${r.seconds}s · 音频 ${r.dur}s · ${r.sr}Hz`;
+  };
+}
 
 // ---------- 固定话术烘焙 ----------
 async function refreshBake() {
@@ -1223,6 +1325,14 @@ async function loadL2d() {
   $('#l2dBase').innerHTML = L2D.expressions.map(e => `<label class="c"><input type="checkbox" data-base="${esc(e.id)}" ${base.includes(e.id) ? 'checked' : ''}>${esc(e.label)}</label>`).join('') || '<span class="hint">（没有找到表情文件）</span>';
   $('#l2dExprBtns').innerHTML = L2D.expressions.map(e => `<span class="btn sm" data-texpr="${esc(e.id)}">${esc(e.label)}</span>`).join('');
   $('#l2dMotionBtns').innerHTML = L2D.motions.map(m => `<span class="btn sm" data-tmotion="${esc(m.id)}"${m.loop ? ' title="循环动作：播完会按“动作播完后自动收尾秒数”强制结束"' : ''}>${esc(m.label)}${m.loop ? ' ·循环' : ''}</span>`).join('') || '<span class="hint">（无）</span>';
+  const moc = L2D.moc || {};
+  const mocEl = $('#l2dMoc');
+  if (mocEl) {
+    mocEl.textContent = moc.moc_label ? `格式：${moc.moc_label}` : '';
+    const hi = (moc.moc_version || 0) >= 5;
+    mocEl.style.color = hi ? 'var(--amber,#c88a00)' : '';
+    mocEl.title = hi ? '这是 Cubism 5 模型。运行时 Core 是 5.1，能加载；但渲染层按 Cubism 4 实现，BlendShape 等 5 代新特性不会显示。' : '';
+  }
   if (L2D.cfg) Object.assign(CFG.live2d, L2D.cfg);  // 后端可能自动纠正了 model_file，同步回前端
   renderEmotions(); renderFixed(); fillForm();
 }

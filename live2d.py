@@ -145,6 +145,34 @@ def motion_meta(model_dir, rel):
         return {}
 
 
+MOC_NAMES = {3: "Cubism 3", 4: "Cubism 4", 5: "Cubism 5"}
+
+
+def moc_info(model_dir, model_file):
+    """moc3 文件第 5 个字节是格式版本。用来告诉用户这个皮套是 Cubism 几。"""
+    path = safe_path(model_dir, model_file) if model_file else None
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            ref = json.load(f).get("FileReferences", {})
+        rel = ref.get("Moc") or ""
+        if not rel:
+            return {}
+        sub = os.path.dirname(model_file)
+        moc = safe_path(model_dir, f"{sub}/{rel}" if sub else rel)
+        if not moc:
+            return {}
+        with open(moc, "rb") as f:
+            head = f.read(8)
+        if len(head) < 5 or head[:4] != b"MOC3":
+            return {}
+        ver = head[4]
+        return {"moc_version": ver, "moc_label": MOC_NAMES.get(ver, f"未知({ver})"), "moc_file": rel}
+    except (OSError, ValueError, IndexError):
+        return {}
+
+
 def auto_emotions(exprs, motions, current=None):
     """按当前皮套实际的表情/动作重建情绪映射，关键词沿用旧配置（那是业务逻辑，和皮套无关）。"""
     old = {e.get("name"): e for e in (current or []) if isinstance(e, dict)}

@@ -10,6 +10,7 @@ import numpy as np
 from brain import fill
 from tts import ENV_FPS, envelope, _resample
 from tts_cache import CACHE as TTS_CACHE, segments as tts_segments
+import tts_cloud
 
 log = logging.getLogger("pipe")
 
@@ -306,6 +307,12 @@ class Pipeline:
             self.app.push("reply", item)
             await self.synth_q.put(item)
 
+    async def _synth(self, tts, text):
+        """本地 GPT-SoVITS 和在线 API 二选一，调用方不用关心。"""
+        if (tts.get("provider") or "local") == "cloud":
+            return await tts_cloud.synth(tts, text)
+        return await self.app.engine.synth(tts, text)
+
     async def _synth_segments(self, tts, chunks):
         """按拆段结果拼 PCM：固定片段读缓存，变量现场合成。"""
         parts, sr0 = [], None
@@ -316,7 +323,7 @@ class Pipeline:
                     return None
                 pcm, sr = hit
             else:
-                pcm, sr = await self.app.engine.synth(tts, text)
+                pcm, sr = await self._synth(tts, text)
             if pcm is None or len(pcm) == 0:
                 continue
             if sr0 is None:
@@ -361,7 +368,7 @@ class Pipeline:
                     if got is None:
                         try:
                             t0 = time.time()
-                            item["pcm"], item["sr"] = await self.app.engine.synth(tts, item["text"])
+                            item["pcm"], item["sr"] = await self._synth(tts, item["text"])
                             item["synth_s"] = round(time.time() - t0, 1)
                         except Exception as e:
                             self.app.push("log", {"level": "error", "msg": f"语音合成失败：{e}"})

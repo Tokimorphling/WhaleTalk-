@@ -11,6 +11,11 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 BASE = "https://music.163.com"
 
 
+def _artists(items):
+    """接口里的歌手名可能是 null，直接用 .get(k, "") 兜不住，join 会抛 TypeError 让整个歌单读不出来。"""
+    return "、".join(n for a in (items or []) if (n := (a.get("name") or "").strip()))
+
+
 class NetEase:
     def __init__(self, get_cookie):
         self.get_cookie = get_cookie
@@ -34,9 +39,11 @@ class NetEase:
         d = await self._get("/api/search/get/web", {"s": kw, "type": 1, "limit": limit, "offset": 0})
         out = []
         for s in (d.get("result") or {}).get("songs") or []:
-            out.append({"id": s["id"], "name": s["name"],
-                        "artist": "、".join(a["name"] for a in s.get("artists") or []),
-                        "album": (s.get("album") or {}).get("name", ""), "dur": round((s.get("duration") or 0) / 1000)})
+            if not s or not s.get("id"):
+                continue
+            out.append({"id": s["id"], "name": s.get("name") or "",
+                        "artist": _artists(s.get("artists")),
+                        "album": ((s.get("album") or {}).get("name") or ""), "dur": round((s.get("duration") or 0) / 1000)})
         return out
 
     async def urls(self, ids, br=320000):
@@ -110,7 +117,7 @@ class NetEase:
         prof, acc = d.get("profile") or {}, d.get("account") or {}
         if not prof:
             return None
-        return {"nickname": prof.get("nickname", ""), "vip": int(acc.get("vipType") or prof.get("vipType") or 0),
+        return {"nickname": prof.get("nickname") or "", "vip": int(acc.get("vipType") or prof.get("vipType") or 0),
                 "uid": prof.get("userId")}
 
     async def my_playlists(self):
@@ -120,7 +127,7 @@ class NetEase:
         d = await self._get("/api/user/playlist", {"uid": acc["uid"], "limit": 100, "offset": 0})
         out = []
         for p in d.get("playlist") or []:
-            out.append({"id": p["id"], "name": p.get("name", ""),
+            out.append({"id": p["id"], "name": p.get("name") or "",
                         "count": p.get("trackCount") or 0,
                         "mine": bool(p.get("creator") and p["creator"].get("userId") == acc["uid"])})
         return {"account": acc, "playlists": out}
@@ -132,10 +139,10 @@ class NetEase:
         for t in pl.get("tracks") or []:
             if not t or not t.get("id"):
                 continue
-            tracks.append({"id": t["id"], "name": t.get("name", ""),
-                           "artist": "、".join(a.get("name", "") for a in t.get("ar") or []),
+            tracks.append({"id": t["id"], "name": t.get("name") or "",
+                           "artist": _artists(t.get("ar")),
                            "dur": round((t.get("dt") or 0) / 1000)})
-        return {"name": pl.get("name", ""), "tracks": tracks}
+        return {"name": pl.get("name") or "", "tracks": tracks}
 
 
 def _tokens(q):
